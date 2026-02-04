@@ -161,6 +161,10 @@ app.get("/api/stocks", async (req, res) => {
   }
 });
 
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok" });
+});
+
 app.get("/api/portfolio", async (req, res) => {
   try {
     const user = await getUser();
@@ -282,6 +286,12 @@ app.post("/api/trade", async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: "Trade execution failed." });
   }
+});
+
+app.get("/", (req, res) => {
+  res.send(
+    "SimuTrade backend is running. Use /api/health to check status or /api/* endpoints."
+  );
 });
 
 app.listen(PORT, () => {
