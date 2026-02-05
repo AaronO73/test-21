@@ -9,7 +9,6 @@ import {
   CartesianGrid,
 } from "recharts";
 
-// Trade form allows users to submit buy/sell orders
 export default function TradeForm({
   priceData,
   selectedSymbol,
@@ -21,10 +20,10 @@ export default function TradeForm({
   const [side, setSide] = useState("buy");
   const [quantity, setQuantity] = useState(1);
   const [orderType, setOrderType] = useState("market");
-  const [limitPrice, setLimitPrice] = useState(0);
+  const [limitPrice, setLimitPrice] = useState("");
 
   const chartData = useMemo(() => {
-    return priceData.history.map((point) => ({
+    return (priceData?.history ?? []).map((point) => ({
       date: point.date,
       price: point.price,
     }));
@@ -32,6 +31,9 @@ export default function TradeForm({
 
   const handleSubmit = (event) => {
     event.preventDefault();
+
+    if (quantity <= 0) return;
+
     onTrade({
       symbol: selectedSymbol,
       side,
@@ -45,14 +47,13 @@ export default function TradeForm({
     <section className="grid gap-6">
       <div className="grid gap-6 lg:grid-cols-[2fr,1fr]">
         <div className="bg-slate-900 rounded-2xl border border-slate-800 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-xl font-semibold">{selectedSymbol} Price</h2>
-              <p className="text-slate-400 text-sm">
-                Latest: {formatCurrency(priceData.latestPrice)}
-              </p>
-            </div>
-          </div>
+          <h2 className="text-xl font-semibold mb-1">
+            {selectedSymbol} Price
+          </h2>
+          <p className="text-slate-400 text-sm mb-4">
+            Latest: {formatCurrency(priceData?.latestPrice ?? 0)}
+          </p>
+
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData}>
@@ -60,10 +61,10 @@ export default function TradeForm({
                 <XAxis dataKey="date" stroke="#64748b" />
                 <YAxis
                   stroke="#64748b"
-                  tickFormatter={(value) => formatCurrency(value)}
+                  tickFormatter={(v) => formatCurrency(v)}
                 />
                 <Tooltip
-                  formatter={(value) => formatCurrency(value)}
+                  formatter={(v) => formatCurrency(v)}
                   contentStyle={{
                     backgroundColor: "#0f172a",
                     border: "1px solid #1e293b",
@@ -87,48 +88,54 @@ export default function TradeForm({
           className="bg-slate-900 rounded-2xl border border-slate-800 p-6 space-y-4"
         >
           <h2 className="text-xl font-semibold">Place a Trade</h2>
+
           <div>
             <label className="text-sm text-slate-300">Symbol</label>
             <select
               className="mt-1 w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2"
               value={selectedSymbol}
-              onChange={(event) => setSelectedSymbol(event.target.value)}
+              onChange={(e) => setSelectedSymbol(e.target.value)}
             >
-              {["AAPL", "TSLA", "MSFT", "BTC", "ETH"].map((symbol) => (
-                <option key={symbol} value={symbol}>
-                  {symbol}
+              {["AAPL", "TSLA", "MSFT", "BTC", "ETH"].map((s) => (
+                <option key={s} value={s}>
+                  {s}
                 </option>
               ))}
             </select>
           </div>
+
           <div>
             <label className="text-sm text-slate-300">Order Type</label>
             <select
               className="mt-1 w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2"
               value={orderType}
-              onChange={(event) => setOrderType(event.target.value)}
+              onChange={(e) => setOrderType(e.target.value)}
             >
               <option value="market">Market</option>
               <option value="limit">Limit</option>
             </select>
           </div>
+
           {orderType === "limit" && (
             <div>
               <label className="text-sm text-slate-300">Limit Price</label>
               <input
                 type="number"
+                min="0"
                 step="0.01"
                 className="mt-1 w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2"
                 value={limitPrice}
-                onChange={(event) => setLimitPrice(event.target.value)}
+                onChange={(e) => setLimitPrice(e.target.value)}
+                required
               />
             </div>
           )}
+
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
               onClick={() => setSide("buy")}
-              className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+              className={`rounded-lg px-4 py-2 font-semibold ${
                 side === "buy"
                   ? "bg-emerald-500 text-white"
                   : "bg-slate-950 text-slate-300"
@@ -139,7 +146,7 @@ export default function TradeForm({
             <button
               type="button"
               onClick={() => setSide("sell")}
-              className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+              className={`rounded-lg px-4 py-2 font-semibold ${
                 side === "sell"
                   ? "bg-rose-500 text-white"
                   : "bg-slate-950 text-slate-300"
@@ -148,23 +155,26 @@ export default function TradeForm({
               Sell
             </button>
           </div>
+
           <div>
             <label className="text-sm text-slate-300">Quantity</label>
             <input
               type="number"
-              min="0"
-              step="0.01"
+              min="0.0001"
+              step="0.0001"
               className="mt-1 w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2"
               value={quantity}
-              onChange={(event) => setQuantity(event.target.value)}
+              onChange={(e) => setQuantity(e.target.value)}
             />
           </div>
+
           <button
             type="submit"
             className="w-full bg-blue-500 hover:bg-blue-400 text-white font-semibold py-2 rounded-lg"
           >
             Submit Trade
           </button>
+
           {statusMessage && (
             <p className="text-sm text-slate-400">{statusMessage}</p>
           )}
