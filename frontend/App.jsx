@@ -9,7 +9,6 @@ import {
   placeTrade,
 } from "./api.js";
 
-// Main app with simple tab navigation
 export default function App() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [portfolio, setPortfolio] = useState(null);
@@ -19,13 +18,12 @@ export default function App() {
   const [currency, setCurrency] = useState("USD");
   const [statusMessage, setStatusMessage] = useState("");
 
-  // Simple FX conversion rates (USD base) for demo purposes
   const fxRates = useMemo(
     () => ({ USD: 1, CAD: 1.35, EUR: 0.92 }),
     []
   );
 
-  const formatCurrency = (value) => {
+  const formatCurrency = (value = 0) => {
     const converted = value * (fxRates[currency] ?? 1);
     return new Intl.NumberFormat("en-US", {
       style: "currency",
@@ -33,54 +31,82 @@ export default function App() {
     }).format(converted);
   };
 
-  // Load portfolio and history on initial render
+  // Initial load
   useEffect(() => {
+    let mounted = true;
+
     const loadData = async () => {
+      try {
+        const [portfolioResponse, historyResponse] = await Promise.all([
+          fetchPortfolio(),
+          fetchHistory(),
+        ]);
+        if (!mounted) return;
+        setPortfolio(portfolioResponse);
+        setHistory(historyResponse);
+        if (portfolioResponse?.currency) {
+          setCurrency(portfolioResponse.currency);
+        }
+      } catch {
+        setStatusMessage("Failed to load data.");
+      }
+    };
+
+    loadData();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // Load price data on symbol change
+  useEffect(() => {
+    let mounted = true;
+
+    const loadPriceData = async () => {
+      try {
+        const response = await fetchStock(selectedSymbol);
+        if (mounted) setPriceData(response);
+      } catch {
+        setPriceData({ latestPrice: 0, history: [] });
+      }
+    };
+
+    loadPriceData();
+    return () => {
+      mounted = false;
+    };
+  }, [selectedSymbol]);
+
+  // Poll portfolio
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const updated = await fetchPortfolio();
+        setPortfolio(updated);
+      } catch {}
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleTrade = async (payload) => {
+    setStatusMessage("Submitting trade...");
+    try {
+      const response = await placeTrade(payload);
+      if (response?.error) {
+        setStatusMessage(response.error);
+        return;
+      }
+      setStatusMessage("Trade executed successfully.");
       const [portfolioResponse, historyResponse] = await Promise.all([
         fetchPortfolio(),
         fetchHistory(),
       ]);
       setPortfolio(portfolioResponse);
       setHistory(historyResponse);
-      if (portfolioResponse?.currency) {
-        setCurrency(portfolioResponse.currency);
-      }
-    };
-    loadData();
-  }, []);
-
-  // Load price data whenever the selected symbol changes
-  useEffect(() => {
-    const loadPriceData = async () => {
-      const response = await fetchStock(selectedSymbol);
-      setPriceData(response);
-    };
-    loadPriceData();
-  }, [selectedSymbol]);
-
-  // Poll portfolio values so the line chart updates with market changes
-  useEffect(() => {
-    const interval = setInterval(async () => {
-      const updated = await fetchPortfolio();
-      setPortfolio(updated);
-    }, 15000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const handleTrade = async (payload) => {
-    setStatusMessage("Submitting trade...");
-    const response = await placeTrade(payload);
-    if (response.error) {
-      setStatusMessage(response.error);
-      return;
+    } catch {
+      setStatusMessage("Trade failed.");
     }
-    setStatusMessage("Trade executed successfully.");
-    const [portfolioResponse, historyResponse] = await Promise.all([
-      fetchPortfolio(),
-      fetchHistory(),
-    ]);
-    setPortfolio(portfolioResponse);
-    setHistory(historyResponse);
   };
 
   return (
@@ -93,6 +119,7 @@ export default function App() {
               Practice trading with real market data and virtual cash.
             </p>
           </div>
+
           <div className="flex gap-2 bg-slate-900 rounded-full p-1">
             {[
               { id: "dashboard", label: "Dashboard" },
@@ -102,7 +129,6 @@ export default function App() {
             ].map((tab) => (
               <button
                 key={tab.id}
-                type="button"
                 className={`px-4 py-2 rounded-full text-sm transition ${
                   activeTab === tab.id
                     ? "bg-blue-500 text-white"
@@ -151,16 +177,12 @@ export default function App() {
               <select
                 className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2"
                 value={currency}
-                onChange={(event) => setCurrency(event.target.value)}
+                onChange={(e) => setCurrency(e.target.value)}
               >
                 <option value="USD">USD</option>
                 <option value="CAD">CAD</option>
                 <option value="EUR">EUR</option>
               </select>
-              <p className="text-slate-400 mt-4">
-                Currency changes affect display only in this demo. Hook this up
-                to `/api/portfolio` to persist to the database.
-              </p>
             </section>
           )}
         </main>
