@@ -9,16 +9,15 @@ import {
   CartesianGrid,
 } from "recharts";
 
+// Dashboard shows portfolio summary and a portfolio value chart
 export default function Dashboard({ portfolio, formatCurrency }) {
-  const timeline = portfolio?.timeline ?? [];
-
   return (
     <section className="grid gap-6">
       <div className="grid gap-4 md:grid-cols-3">
         {[
-          { label: "Cash", value: portfolio?.cash ?? 0 },
-          { label: "Portfolio Value", value: portfolio?.portfolioValue ?? 0 },
-          { label: "Total Equity", value: portfolio?.totalEquity ?? 0 },
+          { label: "Cash", value: portfolio.cash },
+          { label: "Portfolio Value", value: portfolio.portfolioValue },
+          { label: "Total Equity", value: portfolio.totalEquity },
         ].map((card) => (
           <div
             key={card.label}
@@ -33,22 +32,25 @@ export default function Dashboard({ portfolio, formatCurrency }) {
       </div>
 
       <div className="bg-slate-900 rounded-2xl border border-slate-800 p-6">
-        <h2 className="text-xl font-semibold mb-1">Portfolio Value</h2>
-        <p className="text-slate-400 text-sm mb-4">
-          Updated with live market prices.
-        </p>
-
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-xl font-semibold">Portfolio Value</h2>
+            <p className="text-slate-400 text-sm">
+              Updated with live market prices.
+            </p>
+          </div>
+        </div>
         <div className="h-64">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={timeline}>
+            <LineChart data={portfolio.timeline}>
               <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
               <XAxis dataKey="date" stroke="#64748b" />
               <YAxis
                 stroke="#64748b"
-                tickFormatter={(v) => formatCurrency(v)}
+                tickFormatter={(value) => formatCurrency(value)}
               />
               <Tooltip
-                formatter={(v) => formatCurrency(v)}
+                formatter={(value) => formatCurrency(value)}
                 contentStyle={{
                   backgroundColor: "#0f172a",
                   border: "1px solid #1e293b",
@@ -80,15 +82,15 @@ export default function Dashboard({ portfolio, formatCurrency }) {
               </tr>
             </thead>
             <tbody>
-              {(portfolio?.holdings ?? []).map((h) => (
-                <tr key={h.symbol} className="border-t border-slate-800">
-                  <td className="py-2 font-medium">{h.symbol}</td>
-                  <td className="py-2 text-right">{h.quantity}</td>
+              {portfolio.holdings.map((holding) => (
+                <tr key={holding.symbol} className="border-t border-slate-800">
+                  <td className="py-2 font-medium">{holding.symbol}</td>
+                  <td className="py-2 text-right">{holding.quantity}</td>
                   <td className="py-2 text-right">
-                    {formatCurrency(h.averagePrice)}
+                    {formatCurrency(holding.averagePrice)}
                   </td>
                   <td className="py-2 text-right">
-                    {formatCurrency(h.marketValue)}
+                    {formatCurrency(holding.marketValue)}
                   </td>
                 </tr>
               ))}

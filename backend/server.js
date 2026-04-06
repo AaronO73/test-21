@@ -74,7 +74,7 @@ const insertTrade = async (trade) => {
     return;
   }
   await pool.query(
-    "INSERT INTO trades (user_id, symbol, type, price, quantity, timestamp) VALUES ($1,$2,$3,$4,$5,$6);",
+    "INSERT INTO trades (user_id, symbol, type, price, quantity, timestamp) VALUES ($1, $2, $3, $4, $5, $6);",
     [1, trade.symbol, trade.type, trade.price, trade.quantity, trade.timestamp]
   );
 };
@@ -101,12 +101,12 @@ const updateHolding = async (symbol, quantity, averagePrice) => {
   }
 
   await pool.query(
-    "INSERT INTO portfolio (user_id, symbol, quantity, average_price) VALUES ($1,$2,$3,$4) ON CONFLICT (user_id, symbol) DO UPDATE SET quantity=$3, average_price=$4;",
+    "INSERT INTO portfolio (user_id, symbol, quantity, average_price) VALUES ($1, $2, $3, $4) ON CONFLICT (user_id, symbol) DO UPDATE SET quantity = $3, average_price = $4;",
     [1, symbol, quantity, averagePrice]
   );
 };
 
-// --- Market data ---
+// --- Market data helpers ---
 const fetchCryptoData = async (symbol) => {
   const id = CRYPTO_MAP[symbol];
   const response = await fetch(
@@ -143,7 +143,7 @@ const fetchStockData = async (symbol) => {
 const fetchMarketData = async (symbol) =>
   CRYPTO_MAP[symbol] ? fetchCryptoData(symbol) : fetchStockData(symbol);
 
-// --- API ---
+// --- API Endpoints ---
 app.get("/api/stocks", async (req, res) => {
   try {
     const symbol = (req.query.symbol || "AAPL").toUpperCase();
@@ -171,12 +171,19 @@ app.get("/api/portfolio", async (_, res) => {
 
     const portfolioValue = enriched.reduce((t, h) => t + h.marketValue, 0);
 
+    // Mock timeline for UI charts
+    const timeline = Array.from({ length: 10 }).map((_, index) => ({
+      date: `Day ${index + 1}`,
+      value: user.cash + portfolioValue * (0.9 + index * 0.02),
+    }));
+
     res.json({
       cash: user.cash,
       currency: user.currency,
       holdings: enriched,
       portfolioValue,
       totalEquity: user.cash + portfolioValue,
+      timeline,
     });
   } catch {
     res.status(500).json({ error: "Failed to load portfolio." });
@@ -230,6 +237,7 @@ app.post("/api/trade", async (req, res) => {
       const totalCost =
         (existing?.averagePrice ?? 0) * (existing?.quantity ?? 0) +
         executionPrice * quantity;
+      
       await updateUserCash(user.cash - tradeCost);
       await updateHolding(normalized, newQty, totalCost / newQty);
     } else {
@@ -255,9 +263,7 @@ app.post("/api/trade", async (req, res) => {
 });
 
 app.get("/", (_, res) => {
-  res.send(
-    "SimuTrade backend is running. Use /api/health to check status or /api/* endpoints."
-  );
+  res.send("SimuTrade backend is running.");
 });
 
 app.listen(PORT, () => {

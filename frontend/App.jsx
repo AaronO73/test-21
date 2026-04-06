@@ -31,7 +31,7 @@ export default function App() {
     }).format(converted);
   };
 
-  // Initial load
+  // Initial load of portfolio and history
   useEffect(() => {
     let mounted = true;
 
@@ -77,13 +77,15 @@ export default function App() {
     };
   }, [selectedSymbol]);
 
-  // Poll portfolio
+  // Poll portfolio for real-time updates
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
         const updated = await fetchPortfolio();
         setPortfolio(updated);
-      } catch {}
+      } catch (err) {
+        console.error("Polling failed", err);
+      }
     }, 15000);
 
     return () => clearInterval(interval);
@@ -98,6 +100,8 @@ export default function App() {
         return;
       }
       setStatusMessage("Trade executed successfully.");
+      
+      // Refresh data after trade
       const [portfolioResponse, historyResponse] = await Promise.all([
         fetchPortfolio(),
         fetchHistory(),
