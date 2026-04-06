@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const { Pool } = require("pg");
+const fetch = require("node-fetch");
 
 // --- Configuration ---
 const PORT = process.env.PORT || 4000;
@@ -14,7 +15,7 @@ const CRYPTO_MAP = {
   SOL: "solana",
 };
 
-// --- In-memory fallback data (used when DATABASE_URL is missing) ---
+// --- In-memory fallback data ---
 const memoryState = {
   user: {
     id: 1,
@@ -42,10 +43,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// --- Database helper (Postgres or fallback) ---
-const pool = DATABASE_URL
-  ? new Pool({ connectionString: DATABASE_URL })
-  : null;
+// --- Database helper ---
+const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL }) : null;
 
 const getUser = async () => {
   if (!pool) return memoryState.user;
@@ -56,7 +55,7 @@ const getUser = async () => {
 const getHoldings = async () => {
   if (!pool) return memoryState.portfolio;
   const result = await pool.query(
-    "SELECT symbol, quantity, average_price AS \"averagePrice\" FROM portfolio WHERE user_id = 1;"
+    'SELECT symbol, quantity, average_price AS "averagePrice" FROM portfolio WHERE user_id = 1;'
   );
   return result.rows;
 };
@@ -90,16 +89,14 @@ const updateUserCash = async (cash) => {
 
 const updateHolding = async (symbol, quantity, averagePrice) => {
   if (!pool) {
-    const existing = memoryState.portfolio.find((holding) => holding.symbol === symbol);
+    const existing = memoryState.portfolio.find((h) => h.symbol === symbol);
     if (existing) {
       existing.quantity = quantity;
       existing.averagePrice = averagePrice;
     } else {
       memoryState.portfolio.push({ symbol, quantity, averagePrice });
     }
-    memoryState.portfolio = memoryState.portfolio.filter(
-      (holding) => holding.quantity > 0
-    );
+    memoryState.portfolio = memoryState.portfolio.filter((h) => h.quantity > 0);
     return;
   }
 
@@ -116,12 +113,11 @@ const fetchCryptoData = async (symbol) => {
     `https://api.coingecko.com/api/v3/coins/${id}/market_chart?vs_currency=usd&days=30`
   );
   const data = await response.json();
-  const history = data.prices.map(([timestamp, price]) => ({
-    date: new Date(timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+  const history = data.prices.map(([ts, price]) => ({
+    date: new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
     price,
   }));
-  const latestPrice = history[history.length - 1]?.price ?? 0;
-  return { latestPrice, history };
+  return { latestPrice: history.at(-1)?.price ?? 0, history };
 };
 
 const fetchStockData = async (symbol) => {
@@ -132,59 +128,50 @@ const fetchStockData = async (symbol) => {
   const result = data.chart?.result?.[0];
   const timestamps = result?.timestamp ?? [];
   const prices = result?.indicators?.quote?.[0]?.close ?? [];
-  const history = timestamps.map((timestamp, index) => ({
-    date: new Date(timestamp * 1000).toLocaleDateString("en-US", {
+
+  const history = timestamps.map((ts, i) => ({
+    date: new Date(ts * 1000).toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
     }),
-    price: prices[index] ?? 0,
+    price: prices[i] ?? 0,
   }));
-  const latestPrice = history[history.length - 1]?.price ?? 0;
-  return { latestPrice, history };
+
+  return { latestPrice: history.at(-1)?.price ?? 0, history };
 };
 
-const fetchMarketData = async (symbol) => {
-  if (CRYPTO_MAP[symbol]) {
-    return fetchCryptoData(symbol);
-  }
-  return fetchStockData(symbol);
-};
+const fetchMarketData = async (symbol) =>
+  CRYPTO_MAP[symbol] ? fetchCryptoData(symbol) : fetchStockData(symbol);
 
 // --- API Endpoints ---
 app.get("/api/stocks", async (req, res) => {
   try {
     const symbol = (req.query.symbol || "AAPL").toUpperCase();
-    const data = await fetchMarketData(symbol);
-    res.json(data);
-  } catch (error) {
+    res.json(await fetchMarketData(symbol));
+  } catch {
     res.status(500).json({ error: "Failed to fetch market data." });
   }
 });
 
-app.get("/api/health", (req, res) => {
+app.get("/api/health", (_, res) => {
   res.json({ status: "ok" });
 });
 
-app.get("/api/portfolio", async (req, res) => {
+app.get("/api/portfolio", async (_, res) => {
   try {
     const user = await getUser();
     const holdings = await getHoldings();
 
-    const enrichedHoldings = await Promise.all(
-      holdings.map(async (holding) => {
-        const market = await fetchMarketData(holding.symbol);
-        return {
-          ...holding,
-          marketValue: holding.quantity * market.latestPrice,
-        };
+    const enriched = await Promise.all(
+      holdings.map(async (h) => {
+        const market = await fetchMarketData(h.symbol);
+        return { ...h, marketValue: h.quantity * market.latestPrice };
       })
     );
 
-    const portfolioValue = enrichedHoldings.reduce(
-      (total, holding) => total + holding.marketValue,
-      0
-    );
+    const portfolioValue = enriched.reduce((t, h) => t + h.marketValue, 0);
 
+    // Mock timeline for UI charts
     const timeline = Array.from({ length: 10 }).map((_, index) => ({
       date: `Day ${index + 1}`,
       value: user.cash + portfolioValue * (0.9 + index * 0.02),
@@ -193,21 +180,20 @@ app.get("/api/portfolio", async (req, res) => {
     res.json({
       cash: user.cash,
       currency: user.currency,
-      holdings: enrichedHoldings,
+      holdings: enriched,
       portfolioValue,
       totalEquity: user.cash + portfolioValue,
       timeline,
     });
-  } catch (error) {
+  } catch {
     res.status(500).json({ error: "Failed to load portfolio." });
   }
 });
 
-app.get("/api/history", async (req, res) => {
+app.get("/api/history", async (_, res) => {
   try {
-    const trades = await getTrades();
-    res.json(trades);
-  } catch (error) {
+    res.json(await getTrades());
+  } catch {
     res.status(500).json({ error: "Failed to load trade history." });
   }
 });
@@ -215,24 +201,20 @@ app.get("/api/history", async (req, res) => {
 app.post("/api/trade", async (req, res) => {
   try {
     const { symbol, side, quantity, orderType, limitPrice } = req.body;
-    const normalizedSymbol = symbol.toUpperCase();
-
-    if (!symbol || !side || !quantity) {
-      return res.status(400).json({ error: "Missing trade details." });
+    if (!symbol || !side || quantity <= 0) {
+      return res.status(400).json({ error: "Invalid trade request." });
     }
 
-    const market = await fetchMarketData(normalizedSymbol);
+    const normalized = symbol.toUpperCase();
+    const market = await fetchMarketData(normalized);
     const marketPrice = market.latestPrice;
 
-    if (orderType === "limit") {
-      if (
-        (side === "buy" && marketPrice > limitPrice) ||
-        (side === "sell" && marketPrice < limitPrice)
-      ) {
-        return res.status(409).json({
-          error: "Limit order not filled at current market price.",
-        });
-      }
+    if (
+      orderType === "limit" &&
+      ((side === "buy" && marketPrice > limitPrice) ||
+        (side === "sell" && marketPrice < limitPrice))
+    ) {
+      return res.status(409).json({ error: "Limit order not filled." });
     }
 
     const executionPrice =
@@ -245,37 +227,29 @@ app.post("/api/trade", async (req, res) => {
 
     const user = await getUser();
     const holdings = await getHoldings();
-    const existingHolding = holdings.find(
-      (holding) => holding.symbol === normalizedSymbol
-    );
+    const existing = holdings.find((h) => h.symbol === normalized);
 
     if (side === "buy") {
       if (user.cash < tradeCost) {
         return res.status(400).json({ error: "Insufficient cash." });
       }
-      const newQuantity = (existingHolding?.quantity ?? 0) + quantity;
+      const newQty = (existing?.quantity ?? 0) + quantity;
       const totalCost =
-        (existingHolding?.averagePrice ?? 0) *
-          (existingHolding?.quantity ?? 0) +
+        (existing?.averagePrice ?? 0) * (existing?.quantity ?? 0) +
         executionPrice * quantity;
-      const newAveragePrice = totalCost / newQuantity;
+      
       await updateUserCash(user.cash - tradeCost);
-      await updateHolding(normalizedSymbol, newQuantity, newAveragePrice);
+      await updateHolding(normalized, newQty, totalCost / newQty);
     } else {
-      if (!existingHolding || existingHolding.quantity < quantity) {
-        return res.status(400).json({ error: "Not enough holdings to sell." });
+      if (!existing || existing.quantity < quantity) {
+        return res.status(400).json({ error: "Not enough holdings." });
       }
-      const newQuantity = existingHolding.quantity - quantity;
       await updateUserCash(user.cash + tradeCost);
-      await updateHolding(
-        normalizedSymbol,
-        newQuantity,
-        existingHolding.averagePrice
-      );
+      await updateHolding(normalized, existing.quantity - quantity, existing.averagePrice);
     }
 
     await insertTrade({
-      symbol: normalizedSymbol,
+      symbol: normalized,
       type: side,
       price: executionPrice,
       quantity,
@@ -283,15 +257,13 @@ app.post("/api/trade", async (req, res) => {
     });
 
     res.json({ success: true });
-  } catch (error) {
+  } catch {
     res.status(500).json({ error: "Trade execution failed." });
   }
 });
 
-app.get("/", (req, res) => {
-  res.send(
-    "SimuTrade backend is running. Use /api/health to check status or /api/* endpoints."
-  );
+app.get("/", (_, res) => {
+  res.send("SimuTrade backend is running.");
 });
 
 app.listen(PORT, () => {
